@@ -1,0 +1,173 @@
+
+# Deep Learning : Experimenting with MobileNet on CIFAR-10
+
+# Import necessary libraries
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+from torchvision.models import mobilenet_v2
+from torch.utils.data import DataLoader
+import time
+
+# Set up the device for GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Define hyperparameters
+num_epochs = 50
+batch_size = 64
+learning_rate = 0.001
+weight_decay = 1e-4  # L2 regularization strength
+
+# Data augmentation and normalization transforms
+transform_standard = transforms.Compose([
+    transforms.ToTensor(),
+])
+
+transform_augmented = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
+
+# Function to load CIFAR-10 dataset
+def load_data(transform_train, transform_test):
+    """
+    Loads CIFAR-10 training and testing datasets with specified transformations.
+    
+    Parameters:
+    - transform_train: Transformations for training data
+    - transform_test: Transformations for testing data
+    
+    Returns:
+    - trainloader: DataLoader for training data
+    - testloader: DataLoader for testing data
+    """
+    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    return trainloader, testloader
+
+# Function to create and initialize MobileNetV2 model
+def create_model():
+    """
+    Creates and customizes the MobileNetV2 model for CIFAR-10.
+    
+    Returns:
+    - model: Initialized MobileNetV2 model
+    """
+    model = mobilenet_v2(pretrained=False, num_classes=10)
+    model.features[0][0] = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
+    return model.to(device)
+
+# Training function
+def train_model(model, trainloader, testloader, optimizer, criterion, scheduler):
+    """
+    Trains the model and evaluates it on the test set after each epoch.
+    
+    Parameters:
+    - model: Neural network model
+    - trainloader: DataLoader for training data
+    - testloader: DataLoader for testing data
+    - optimizer: Optimization algorithm
+    - criterion: Loss function
+    - scheduler: Learning rate scheduler
+    
+    Returns:
+    - accuracy: Final accuracy on the test set
+    """
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        for inputs, labels in trainloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+
+        scheduler.step()
+
+        # Validation
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for inputs, labels in testloader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = outputs.max(1)
+                total += labels.size(0)
+                correct += predicted.eq(labels).sum().item()
+
+        accuracy = 100 * correct / total
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(trainloader):.4f}, Accuracy: {accuracy:.2f}%')
+
+    return accuracy
+
+# Main function to run experiments
+def run_experiment(config_name, use_augmentation, use_l2_reg):
+    """
+    Runs an experiment with specified configurations.
+    
+    Parameters:
+    - config_name: Name of the experiment configuration
+    - use_augmentation: Boolean flag for data augmentation
+    - use_l2_reg: Boolean flag for L2 regularization
+    
+    Returns:
+    - final_accuracy: Final accuracy after training
+    """
+    print(f"\nRunning experiment: {config_name}")
+
+    if use_augmentation:
+        trainloader, testloader = load_data(transform_augmented, transform_augmented)
+    else:
+        trainloader, testloader = load_data(transform_standard, transform_standard)
+
+    model = create_model()
+    criterion = nn.CrossEntropyLoss()
+
+    if use_l2_reg:
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, amsgrad=True)
+    else:
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, amsgrad=True)
+
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+
+    start_time = time.time()
+    final_accuracy = train_model(model, trainloader, testloader, optimizer, criterion, scheduler)
+    end_time = time.time()
+
+    print(f"Final Accuracy: {final_accuracy:.2f}%")
+    print(f"Training Time: {end_time - start_time:.2f} seconds")
+
+    return final_accuracy
+
+# Experiment results storage
+results = {}
+
+# Run different configurations of the model
+results['Standard'] = run_experiment("Standard", False, False)
+results['With Augmentation'] = run_experiment("With Augmentation", True, False)
+results['With L2 Regularization'] = run_experiment("With L2 Regularization", False, True)
+results['With Augmentation and L2'] = run_experiment("With Augmentation and L2", True, True)
+
+# Summary of results
+print("\nSummary of Results:")
+for config, accuracy in results.items():
+    print(f"{config}: {accuracy:.2f}%")
+
+# Determine the best configuration based on accuracy
+best_config = max(results, key=results.get)
+print(f"\nBest Configuration: {best_config} with accuracy {results[best_config]:.2f}%")
+

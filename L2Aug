@@ -1,7 +1,5 @@
-# Deep L Fund
-# L2 and Aug with MobileNet on CIFAR-10 
+# Deep L Fund: Experimenting with L2 Regularization and Augmentation on MobileNet with CIFAR-10
 
-# Import libraries
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,17 +9,17 @@ from torchvision.models import mobilenet_v2
 from torch.utils.data import DataLoader
 import time
 
-# Verify GPU setup in Colab
+# Check for GPU setup
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
+print(f"Running on device: {device}")
 
-# Define hyperparameters for training
+# Training parameters
 num_epochs = 50
 batch_size = 64
 learning_rate = 0.001
-weight_decay = 1e-4  # L2 regularization strength
+weight_decay = 1e-4  # Strength of L2 regularization
 
-# Define data aug and normalisation 
+# Data augmentation and normalization
 transform_standard = transforms.Compose([
     transforms.ToTensor(),
 ])
@@ -33,19 +31,9 @@ transform_augmented = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# Load CIFAR-10 
+# CIFAR-10 data loader with optional augmentation
 def load_data(transform_train, transform_test):
-    """
-    Loads CIFAR-10 training and testing datasets with specified transformations.
-
-    Parameters:
-    - transform_train: Transformations for training data
-    - transform_test: Transformations for testing data
-
-    Returns:
-    - trainloader: DataLoader for training data
-    - testloader: DataLoader for testing data
-    """
+    # Load train and test sets with chosen transformations
     trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
 
@@ -54,31 +42,14 @@ def load_data(transform_train, transform_test):
 
     return trainloader, testloader
 
-# Initialise MobileNetV2 model
+# Initialize MobileNetV2 model
 def create_model():
-    """
-    Initializes MobileNetV2 for CIFAR-10 with customized final layer.
-
-    Returns:
-    - model: Customized MobileNetV2 model
-    """
     model = mobilenet_v2(pretrained=False, num_classes=10)
     model.features[0][0] = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
     return model.to(device)
 
-# Training and eval function
+# Training and evaluation function
 def train_model(model, trainloader, testloader, optimizer, criterion, scheduler):
-    """
-    Trains the model and evaluates it on test set each epoch.
-
-    Parameters:
-    - model: Neural network model
-    - criterion: Loss function
-    - scheduler: Learning rate 
-
-    Returns:
-    - accuracy: Final accuracy on the test set
-    """
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
@@ -95,10 +66,9 @@ def train_model(model, trainloader, testloader, optimizer, criterion, scheduler)
 
         scheduler.step()
 
-        # Validation
+        # Evaluate on test set
         model.eval()
-        correct = 0
-        total = 0
+        correct, total = 0, 0
         with torch.no_grad():
             for inputs, labels in testloader:
                 inputs, labels = inputs.to(device), labels.to(device)
@@ -108,24 +78,15 @@ def train_model(model, trainloader, testloader, optimizer, criterion, scheduler)
                 correct += predicted.eq(labels).sum().item()
 
         accuracy = 100 * correct / total
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(trainloader):.4f}, Accuracy: {accuracy:.2f}%')
+        print(f"Epoch {epoch+1}/{num_epochs}: Loss = {running_loss/len(trainloader):.4f}, Test Acc = {accuracy:.2f}%")
 
     return accuracy
 
-# Run training experiment with specific configs
+# Experiment runner
 def run_experiment(config_name, use_augmentation, use_l2_reg):
-    """
+    print(f"\nStarting experiment: {config_name}")
 
-    Parameters:
-    - config_name: Name experiment 
-    - use_augmentation: Boolean flag for data augmentation
-    - use_l2_reg: Boolean flag for L2 regularization
-
-    Returns:
-    - final_accuracy: Final accuracy after training
-    """
-    print(f"\nRunning experiment: {config_name}")
-
+    # Choose data transformations
     if use_augmentation:
         trainloader, testloader = load_data(transform_augmented, transform_augmented)
     else:
@@ -134,36 +95,33 @@ def run_experiment(config_name, use_augmentation, use_l2_reg):
     model = create_model()
     criterion = nn.CrossEntropyLoss()
 
-    if use_l2_reg:
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, amsgrad=True)
-    else:
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate, amsgrad=True)
-
+    # Set optimizer with or without L2 regularization
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay if use_l2_reg else 0, amsgrad=True)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
 
     start_time = time.time()
     final_accuracy = train_model(model, trainloader, testloader, optimizer, criterion, scheduler)
     end_time = time.time()
 
-    print(f"Final Accuracy: {final_accuracy:.2f}%")
-    print(f"Training Time: {end_time - start_time:.2f} seconds")
+    print(f"Final Accuracy for {config_name}: {final_accuracy:.2f}%")
+    print(f"Total Training Time: {end_time - start_time:.2f} seconds")
 
     return final_accuracy
 
-# Dictionary store results
-results = {}
+# Running different configurations
+results = {
+    'Standard': run_experiment("Standard", False, False),
+    'With Augmentation': run_experiment("With Augmentation", True, False),
+    'With L2 Regularization': run_experiment("With L2 Regularization", False, True),
+    'With Augmentation and L2': run_experiment("With Augmentation and L2", True, True)
+}
 
-# Run various configs
-results['Standard'] = run_experiment("Standard", False, False)
-results['With Augmentation'] = run_experiment("With Augmentation", True, False)
-results['With L2 Regularization'] = run_experiment("With L2 Regularization", False, True)
-results['With Augmentation and L2'] = run_experiment("With Augmentation and L2", True, True)
-
-# Summarise results 
-print("\nSummary of Results:")
+# Summary of results
+print("\nSummary of Experiment Results:")
 for config, accuracy in results.items():
-    print(f"{config}: {accuracy:.2f}%")
+    print(f"{config} Accuracy: {accuracy:.2f}%")
 
-# Print best config
+# Print best configuration
 best_config = max(results, key=results.get)
-print(f"\nBest Configuration: {best_config} with accuracy {results[best_config]:.2f}%")
+print(f"\nBest Configuration: {best_config} - Accuracy: {results[best_config]:.2f}%")
+

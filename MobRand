@@ -1,51 +1,34 @@
-# Computer Science Assignment
-# Experimenting with ResNet-18 on CIFAR-10 using PyTorch and Colab GPU
-
-# Import necessary libraries
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from torchvision.models import resnet18
+from torchvision.models import mobilenet_v2
 from torch.utils.data import DataLoader, random_split
 import time
+import random
 
-# Verify GPU setup in Colab
+# Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
 
-# Define hyperparameters for the model
-batch_size = 128
-weight_decay = 1e-4  # L2 regularization strength
-validation_split = 0.1  # 10% of training data for validation
-
-# Define data augmentation and normalization transforms
-transform_augmented = transforms.Compose([
-    transforms.Resize(224),
-    transforms.RandomCrop(224, padding=4),
+# Data transforms (using the best configuration with augmentation)
+transform_train = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# Function to load CIFAR-10 dataset with train, validation, and test splits
-def load_data(transform_train, transform_test):
-    """
-    Loads CIFAR-10 dataset and splits it into training, validation, and test sets.
+transform_test = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
 
-    Parameters:
-    - transform_train: Transformations for training data
-    - transform_test: Transformations for testing data
-
-    Returns:
-    - trainloader: DataLoader for training data
-    - valloader: DataLoader for validation data
-    - testloader: DataLoader for testing data
-    """
+# Function to load data
+def load_data(batch_size, validation_split=0.1):
     full_trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
-    
-    # Split training data into train and validation sets
+
+    # Split training set into train and validation
     train_size = int((1 - validation_split) * len(full_trainset))
     val_size = len(full_trainset) - train_size
     trainset, valset = random_split(full_trainset, [train_size, val_size])
@@ -58,46 +41,27 @@ def load_data(transform_train, transform_test):
 
     return trainloader, valloader, testloader
 
-# Function to create the ResNet-18 model for CIFAR-10
+# Function to create model
 def create_model():
-    """
-    Initializes and customizes ResNet-18 for CIFAR-10 classification.
-
-    Returns:
-    - model: ResNet-18 model with modified final layer
-    """
-    model = resnet18(pretrained=False)
-    model.fc = nn.Linear(model.fc.in_features, 10)  # Adjusting final layer for 10 classes
+    model = mobilenet_v2(pretrained=False, num_classes=10)
+    model.features[0][0] = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
     return model.to(device)
 
 # Training function
 def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs):
-    """
-    Trains the model and evaluates it on the validation set after each epoch.
-
-    Parameters:
-    - model: Neural network model
-    - trainloader: DataLoader for training data
-    - valloader: DataLoader for validation data
-    - optimizer: Optimization algorithm
-    - criterion: Loss function
-    - scheduler: Learning rate scheduler
-    - num_epochs: Number of epochs to train
-
-    Returns:
-    - best_val_accuracy: Highest validation accuracy achieved during training
-    """
     best_val_accuracy = 0
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         for inputs, labels in trainloader:
             inputs, labels = inputs.to(device), labels.to(device)
+
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+
             running_loss += loss.item()
 
         scheduler.step()
@@ -122,65 +86,80 @@ def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, 
 
     return best_val_accuracy
 
-# Main function to run experiments with different hyperparameter configurations
-def run_experiment(num_epochs, learning_rate):
-    """
-    Runs a training experiment with specified hyperparameters.
+# Hyperparameter tuning function
+def hyperparameter_tuning(num_trials=20):
+    best_val_accuracy = 0
+    best_params = {}
 
-    Parameters:
-    - num_epochs: Number of epochs to train
-    - learning_rate: Learning rate for the optimizer
+    for _ in range(num_trials):
+        # Random hyperparameters
+        batch_size = random.choice([32, 64, 128])
+        learning_rate = random.uniform(0.0001, 0.01)
+        weight_decay = random.uniform(1e-5, 1e-3)
+        num_epochs = random.randint(30, 70)
+        step_size = random.randint(10, 20)
+        gamma = random.uniform(0.1, 0.5)
 
-    Returns:
-    - best_val_accuracy: Best validation accuracy achieved
-    - test_accuracy: Final test accuracy after training
-    """
-    print(f"\nRunning experiment with Epochs: {num_epochs}, Learning Rate: {learning_rate}")
+        print(f"\nTrial with parameters:")
+        print(f"Batch Size: {batch_size}")
+        print(f"Learning Rate: {learning_rate}")
+        print(f"Weight Decay: {weight_decay}")
+        print(f"Num Epochs: {num_epochs}")
+        print(f"Step Size: {step_size}")
+        print(f"Gamma: {gamma}")
 
-    trainloader, valloader, testloader = load_data(transform_augmented, transform_augmented)
-    model = create_model()
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+        trainloader, valloader, _ = load_data(batch_size)
+        model = create_model()
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, amsgrad=True)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma)
 
-    start_time = time.time()
-    best_val_accuracy = train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs)
-    end_time = time.time()
+        val_accuracy = train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs)
 
-    # Final test set evaluation
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for inputs, labels in testloader:
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = model(inputs)
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
+            best_params = {
+                'batch_size': batch_size,
+                'learning_rate': learning_rate,
+                'weight_decay': weight_decay,
+                'num_epochs': num_epochs,
+                'step_size': step_size,
+                'gamma': gamma
+            }
 
-    test_accuracy = 100 * correct / total
-    print(f"Best Validation Accuracy: {best_val_accuracy:.2f}%")
-    print(f"Test Accuracy: {test_accuracy:.2f}%")
-    print(f"Training Time: {end_time - start_time:.2f} seconds")
+    return best_params, best_val_accuracy
 
-    return best_val_accuracy, test_accuracy
+# Run hyperparameter tuning
+best_params, best_val_accuracy = hyperparameter_tuning()
 
-# Grid search over epochs and learning rates
-results = {}
-for num_epochs in [20, 40]:
-    for learning_rate in [0.01, 0.001]:
-        config_name = f"Epochs_{num_epochs}_LR_{learning_rate}"
-        results[config_name] = run_experiment(num_epochs, learning_rate)
+print("\nBest Hyperparameters:")
+for param, value in best_params.items():
+    print(f"{param}: {value}")
+print(f"Best Validation Accuracy: {best_val_accuracy:.2f}%")
 
-# Summary of results
-print("\nSummary of Results:")
-for config, (val_accuracy, test_accuracy) in results.items():
-    print(f"{config}: Val Accuracy: {val_accuracy:.2f}%, Test Accuracy: {test_accuracy:.2f}%")
+# Train final model with best hyperparameters
+print("\nTraining final model with best hyperparameters...")
+trainloader, valloader, testloader = load_data(best_params['batch_size'])
+model = create_model()
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=best_params['learning_rate'], weight_decay=best_params['weight_decay'], amsgrad=True)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=best_params['step_size'], gamma=best_params['gamma'])
 
-# Determine the best configuration based on validation accuracy
-best_config = max(results, key=lambda k: results[k][0])
-print(f"\nBest Configuration: {best_config}")
-print(f"Best Validation Accuracy: {results[best_config][0]:.2f}%")
-print(f"Corresponding Test Accuracy: {results[best_config][1]:.2f}%")
+train_model(model, trainloader, valloader, optimizer, criterion, scheduler, best_params['num_epochs'])
+
+# Final test set evaluation
+model.eval()
+correct = 0
+total = 0
+with torch.no_grad():
+    for inputs, labels in testloader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        outputs = model(inputs)
+        _, predicted = outputs.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().item()
+
+test_accuracy = 100 * correct / total
+print(f"\nFinal Test Accuracy: {test_accuracy:.2f}%")
+
 

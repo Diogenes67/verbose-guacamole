@@ -1,5 +1,5 @@
-# Computer Science Assignment
-# Experimenting with ResNet-18 on CIFAR-10 using PyTorch and Colab GPU
+# Deep Learn Fund
+# Experimenting Grid ResNet-18 on CIFAR-10 using PyTorch and Colab GPU
 
 # Import necessary libraries
 import torch
@@ -11,16 +11,16 @@ from torchvision.models import resnet18
 from torch.utils.data import DataLoader, random_split
 import time
 
-# Verify GPU setup in Colab
+# Verify GPU setup in G Colab
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Define hyperparameters for the model
+# Define hyperparameters 
 batch_size = 128
-weight_decay = 1e-4  # L2 regularization strength
-validation_split = 0.1  # 10% of training data for validation
+weight_decay = 1e-4  # L2 regularisation 
+validation_split = 0.1  # 10%  for validation
 
-# Define data augmentation and normalization transforms
+# Define data augmentation and normalisation 
 transform_augmented = transforms.Compose([
     transforms.Resize(224),
     transforms.RandomCrop(224, padding=4),
@@ -29,23 +29,23 @@ transform_augmented = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# Function to load CIFAR-10 dataset with train, validation, and test splits
+# Load CIFAR-10 with train, validation, and test splits
 def load_data(transform_train, transform_test):
     """
     Loads CIFAR-10 dataset and splits it into training, validation, and test sets.
 
     Parameters:
-    - transform_train: Transformations for training data
-    - transform_test: Transformations for testing data
+    - transform_train: Transformations for training 
+    - transform_test: Transformations for testing 
 
     Returns:
-    - trainloader: DataLoader for training data
-    - valloader: DataLoader for validation data
-    - testloader: DataLoader for testing data
+    - trainloader: DataLoader for training 
+    - valloader: DataLoader for validation 
+    - testloader: DataLoader for testing 
     """
     full_trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
     
-    # Split training data into train and validation sets
+    # Split training data into train and 10% validation sets
     train_size = int((1 - validation_split) * len(full_trainset))
     val_size = len(full_trainset) - train_size
     trainset, valset = random_split(full_trainset, [train_size, val_size])
@@ -58,10 +58,10 @@ def load_data(transform_train, transform_test):
 
     return trainloader, valloader, testloader
 
-# Function to create the ResNet-18 model for CIFAR-10
+# Create ResNet-18 model for CIFAR-10
 def create_model():
     """
-    Initializes and customizes ResNet-18 for CIFAR-10 classification.
+    Initializes and customises ResNet-18 for CIFAR-10.
 
     Returns:
     - model: ResNet-18 model with modified final layer
@@ -70,22 +70,22 @@ def create_model():
     model.fc = nn.Linear(model.fc.in_features, 10)  # Adjusting final layer for 10 classes
     return model.to(device)
 
-# Training function
+# Training 
 def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs):
     """
-    Trains the model and evaluates it on the validation set after each epoch.
+    Trains the model and evaluates it on the validation set
 
     Parameters:
-    - model: Neural network model
-    - trainloader: DataLoader for training data
-    - valloader: DataLoader for validation data
+    - model: Neural network 
+    - trainloader: DataLoader training data
+    - valloader: DataLoader validation data
     - optimizer: Optimization algorithm
     - criterion: Loss function
     - scheduler: Learning rate scheduler
-    - num_epochs: Number of epochs to train
+    - num_epochs: Number epochs 
 
     Returns:
-    - best_val_accuracy: Highest validation accuracy achieved during training
+    - best_val_accuracy: Highest validation accuracy  
     """
     best_val_accuracy = 0
     for epoch in range(num_epochs):
@@ -122,17 +122,17 @@ def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, 
 
     return best_val_accuracy
 
-# Main function to run experiments with different hyperparameter configurations
+# Run different hyperparameter configs
 def run_experiment(num_epochs, learning_rate):
     """
-    Runs a training experiment with specified hyperparameters.
+    Run training experiment with  hyperparameter
 
     Parameters:
-    - num_epochs: Number of epochs to train
-    - learning_rate: Learning rate for the optimizer
+    - num_epochs: Number of epochs
+    - learning_rate: Learning rate 
 
     Returns:
-    - best_val_accuracy: Best validation accuracy achieved
+    - best_val_accuracy: Best validation accuracy 
     - test_accuracy: Final test accuracy after training
     """
     print(f"\nRunning experiment with Epochs: {num_epochs}, Learning Rate: {learning_rate}")
@@ -147,7 +147,7 @@ def run_experiment(num_epochs, learning_rate):
     best_val_accuracy = train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs)
     end_time = time.time()
 
-    # Final test set evaluation
+    # Final test set eval
     model.eval()
     correct = 0
     total = 0
@@ -166,19 +166,19 @@ def run_experiment(num_epochs, learning_rate):
 
     return best_val_accuracy, test_accuracy
 
-# Grid search over epochs and learning rates
+# Grid search epochs and learning rates
 results = {}
 for num_epochs in [20, 40]:
     for learning_rate in [0.01, 0.001]:
         config_name = f"Epochs_{num_epochs}_LR_{learning_rate}"
         results[config_name] = run_experiment(num_epochs, learning_rate)
 
-# Summary of results
+# Summary 
 print("\nSummary of Results:")
 for config, (val_accuracy, test_accuracy) in results.items():
     print(f"{config}: Val Accuracy: {val_accuracy:.2f}%, Test Accuracy: {test_accuracy:.2f}%")
 
-# Determine the best configuration based on validation accuracy
+# Best config based on validation 
 best_config = max(results, key=lambda k: results[k][0])
 print(f"\nBest Configuration: {best_config}")
 print(f"Best Validation Accuracy: {results[best_config][0]:.2f}%")

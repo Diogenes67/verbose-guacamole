@@ -1,5 +1,4 @@
-# Deep L Fund
-# Random Hyperparameter Tuning for MobileNetV2 on CIFAR-10 
+# Deep L Fund: Hyperparameter Tuning for MobileNetV2 on CIFAR-10
 
 import torch
 import torch.nn as nn
@@ -11,11 +10,11 @@ from torch.utils.data import DataLoader, random_split
 import time
 import random
 
-# Set device based on availability
+# Choose GPU if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Training on device: {device}")
 
-# Data augmentation and normalization for training
+# Data augmentation and normalization setup
 transform_train = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
     transforms.RandomHorizontalFlip(),
@@ -23,14 +22,14 @@ transform_train = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# Standard normalization for test data
 transform_test = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-# Load CIFAR-10 with training, validation, and test splits
+# Load and split CIFAR-10 data
 def load_data(batch_size, validation_split=0.1):
+    # Split into training, validation, and test loaders
     full_trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
     train_size = int((1 - validation_split) * len(full_trainset))
     val_size = len(full_trainset) - train_size
@@ -43,13 +42,13 @@ def load_data(batch_size, validation_split=0.1):
 
     return trainloader, valloader, testloader
 
-# Initialize MobileNetV2 and modify for CIFAR-10 classes
+# Initialize MobileNetV2 model with CIFAR-10 class adjustments
 def create_model():
     model = mobilenet_v2(pretrained=False, num_classes=10)
     model.features[0][0] = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
     return model.to(device)
 
-# Train model with validation evaluation
+# Training function with validation check
 def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs):
     best_val_accuracy = 0
     for epoch in range(num_epochs):
@@ -66,7 +65,7 @@ def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, 
 
         scheduler.step()
 
-        # Validate model on validation set
+        # Validation accuracy
         model.eval()
         correct, total = 0, 0
         with torch.no_grad():
@@ -78,20 +77,20 @@ def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, 
                 correct += predicted.eq(labels).sum().item()
 
         val_accuracy = 100 * correct / total
-        print(f'Epoch [{epoch+1}/{num_epochs}] - Loss: {running_loss/len(trainloader):.4f}, Val Accuracy: {val_accuracy:.2f}%')
+        print(f"Epoch {epoch + 1}/{num_epochs}: Loss = {running_loss / len(trainloader):.4f}, Val Accuracy = {val_accuracy:.2f}%")
 
         if val_accuracy > best_val_accuracy:
             best_val_accuracy = val_accuracy
 
     return best_val_accuracy
 
-# Run random hyperparameter tuning
+# Perform hyperparameter tuning with random search
 def hyperparameter_tuning(num_trials=10):
     best_val_accuracy = 0
     best_params = {}
 
     for trial in range(num_trials):
-        # Sample random hyperparameters
+        # Sample hyperparameters randomly
         batch_size = random.choice([32, 64, 128])
         learning_rate = random.uniform(0.0001, 0.01)
         weight_decay = random.uniform(1e-5, 1e-3)
@@ -99,8 +98,7 @@ def hyperparameter_tuning(num_trials=10):
         step_size = random.randint(10, 20)
         gamma = random.uniform(0.1, 0.5)
 
-        # Trial setup info
-        print(f"\nTrial {trial + 1} - Params: Batch Size: {batch_size}, LR: {learning_rate:.4f}, WD: {weight_decay:.5f}, Epochs: {num_epochs}")
+        print(f"\nTrial {trial + 1} - Params: Batch = {batch_size}, LR = {learning_rate:.4f}, WD = {weight_decay:.5f}, Epochs = {num_epochs}")
 
         trainloader, valloader, _ = load_data(batch_size)
         model = create_model()
@@ -125,17 +123,17 @@ def hyperparameter_tuning(num_trials=10):
 
     return best_params, best_val_accuracy
 
-# Execute hyperparameter tuning
+# Run the tuning process
 best_params, best_val_accuracy = hyperparameter_tuning()
 
-# Report best hyperparameters
-print("\nBest Hyperparameters:")
+# Display best hyperparameters
+print("\nBest Hyperparameters Found:")
 for param, value in best_params.items():
     print(f"{param}: {value}")
 print(f"Best Validation Accuracy: {best_val_accuracy:.2f}%")
 
-# Final training with best hyperparameters
-print("\nRetraining final model with best hyperparameters...")
+# Final training with the best hyperparameters
+print("\nRetraining model with optimal parameters...")
 trainloader, valloader, testloader = load_data(best_params['batch_size'])
 model = create_model()
 criterion = nn.CrossEntropyLoss()
@@ -144,7 +142,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=best_params['step_siz
 
 train_model(model, trainloader, valloader, optimizer, criterion, scheduler, best_params['num_epochs'])
 
-# Evaluate on test set
+# Final test evaluation
 model.eval()
 correct, total = 0, 0
 with torch.no_grad():
@@ -157,4 +155,5 @@ with torch.no_grad():
 
 test_accuracy = 100 * correct / total
 print(f"\nFinal Test Accuracy: {test_accuracy:.2f}%")
+
 

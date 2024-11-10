@@ -1,0 +1,185 @@
+# Computer Science Assignment
+# Experimenting with ResNet-18 on CIFAR-10 using PyTorch and Colab GPU
+
+# Import necessary libraries
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+from torchvision.models import resnet18
+from torch.utils.data import DataLoader, random_split
+import time
+
+# Verify GPU setup in Colab
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Define hyperparameters for the model
+batch_size = 128
+weight_decay = 1e-4  # L2 regularization strength
+validation_split = 0.1  # 10% of training data for validation
+
+# Define data augmentation and normalization transforms
+transform_augmented = transforms.Compose([
+    transforms.Resize(224),
+    transforms.RandomCrop(224, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
+
+# Function to load CIFAR-10 dataset with train, validation, and test splits
+def load_data(transform_train, transform_test):
+    """
+    Loads CIFAR-10 dataset and splits it into training, validation, and test sets.
+
+    Parameters:
+    - transform_train: Transformations for training data
+    - transform_test: Transformations for testing data
+
+    Returns:
+    - trainloader: DataLoader for training data
+    - valloader: DataLoader for validation data
+    - testloader: DataLoader for testing data
+    """
+    full_trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    
+    # Split training data into train and validation sets
+    train_size = int((1 - validation_split) * len(full_trainset))
+    val_size = len(full_trainset) - train_size
+    trainset, valset = random_split(full_trainset, [train_size, val_size])
+
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    valloader = DataLoader(valset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    return trainloader, valloader, testloader
+
+# Function to create the ResNet-18 model for CIFAR-10
+def create_model():
+    """
+    Initializes and customizes ResNet-18 for CIFAR-10 classification.
+
+    Returns:
+    - model: ResNet-18 model with modified final layer
+    """
+    model = resnet18(pretrained=False)
+    model.fc = nn.Linear(model.fc.in_features, 10)  # Adjusting final layer for 10 classes
+    return model.to(device)
+
+# Training function
+def train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs):
+    """
+    Trains the model and evaluates it on the validation set after each epoch.
+
+    Parameters:
+    - model: Neural network model
+    - trainloader: DataLoader for training data
+    - valloader: DataLoader for validation data
+    - optimizer: Optimization algorithm
+    - criterion: Loss function
+    - scheduler: Learning rate scheduler
+    - num_epochs: Number of epochs to train
+
+    Returns:
+    - best_val_accuracy: Highest validation accuracy achieved during training
+    """
+    best_val_accuracy = 0
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        for inputs, labels in trainloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        scheduler.step()
+
+        # Validation
+        model.eval()
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for inputs, labels in valloader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                _, predicted = outputs.max(1)
+                total += labels.size(0)
+                correct += predicted.eq(labels).sum().item()
+
+        val_accuracy = 100 * correct / total
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(trainloader):.4f}, Val Accuracy: {val_accuracy:.2f}%')
+
+        if val_accuracy > best_val_accuracy:
+            best_val_accuracy = val_accuracy
+
+    return best_val_accuracy
+
+# Main function to run experiments with different hyperparameter configurations
+def run_experiment(num_epochs, learning_rate):
+    """
+    Runs a training experiment with specified hyperparameters.
+
+    Parameters:
+    - num_epochs: Number of epochs to train
+    - learning_rate: Learning rate for the optimizer
+
+    Returns:
+    - best_val_accuracy: Best validation accuracy achieved
+    - test_accuracy: Final test accuracy after training
+    """
+    print(f"\nRunning experiment with Epochs: {num_epochs}, Learning Rate: {learning_rate}")
+
+    trainloader, valloader, testloader = load_data(transform_augmented, transform_augmented)
+    model = create_model()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
+
+    start_time = time.time()
+    best_val_accuracy = train_model(model, trainloader, valloader, optimizer, criterion, scheduler, num_epochs)
+    end_time = time.time()
+
+    # Final test set evaluation
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in testloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = model(inputs)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+
+    test_accuracy = 100 * correct / total
+    print(f"Best Validation Accuracy: {best_val_accuracy:.2f}%")
+    print(f"Test Accuracy: {test_accuracy:.2f}%")
+    print(f"Training Time: {end_time - start_time:.2f} seconds")
+
+    return best_val_accuracy, test_accuracy
+
+# Grid search over epochs and learning rates
+results = {}
+for num_epochs in [20, 40]:
+    for learning_rate in [0.01, 0.001]:
+        config_name = f"Epochs_{num_epochs}_LR_{learning_rate}"
+        results[config_name] = run_experiment(num_epochs, learning_rate)
+
+# Summary of results
+print("\nSummary of Results:")
+for config, (val_accuracy, test_accuracy) in results.items():
+    print(f"{config}: Val Accuracy: {val_accuracy:.2f}%, Test Accuracy: {test_accuracy:.2f}%")
+
+# Determine the best configuration based on validation accuracy
+best_config = max(results, key=lambda k: results[k][0])
+print(f"\nBest Configuration: {best_config}")
+print(f"Best Validation Accuracy: {results[best_config][0]:.2f}%")
+print(f"Corresponding Test Accuracy: {results[best_config][1]:.2f}%")
